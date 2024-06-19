@@ -3,10 +3,12 @@ import { parse } from "@fast-csv/parse";
 import { readFileSync } from "fs";
 import { exit } from "process";
 import express from "express";
+import cors from "cors";
 
 function createTables(newdb: Database) {
-  newdb.exec(`
-          CREATE TABLE dinesafe (
+  newdb.exec(
+    `
+          CREATE TABLE IF NOT EXISTS dinesafe (
               id INT PRIMARY KEY NOT NULL,
               establishment_id INT,
               inspection_id INT,
@@ -25,67 +27,107 @@ function createTables(newdb: Database) {
               longitude TEXT,
               unique_id TEXT
           );    
-      `);
+      `,
+    (err) => {
+      if (err) {
+        console.error("Error creating table: ", err.message);
+        return;
+      }
 
-  const fp = parse({ headers: true })
-    .on("error", (error) => console.error(error))
-    .on("data", (row) => {
-      console.debug("Reading row: ", row);
+      const insertData: any[] = [];
+      const fp = parse({ headers: true, trim: true })
+        .on("error", (error: Error) =>
+          console.error("Error parsing CSV: ", error)
+        )
+        .on("data", (row: any) => {
+          const values = [
+            parseInt(row["_id"], 10),
+            parseInt(row["Establishment ID"], 10),
+            parseInt(row["Inspection ID"], 10),
+            row["Establishment Name"],
+            row["Establishment Type"],
+            row["Establishment Address"],
+            row["Establishment Status"],
+            row["Min. Inspections Per Year"],
+            row["Infraction Details"],
+            row["Inspection Date"],
+            row["Severity"],
+            row["Action"],
+            row["Outcome"],
+            row["Amount Fined"],
+            row["Latitude"],
+            row["Longitude"],
+            row["unique_id"],
+          ];
 
-      const query = `
-                  INSERT INTO dinesafe (
-                      id,
-                      establishment_id,
-                      inspection_id,
-                      establishment_name,
-                      establishment_type,
-                      establishment_address,
-                      establishment_status,
-                      min_inspections_per_year,
-                      infraction_details,
-                      inspection_date,
-                      severity,
-                      action,
-                      outcome,
-                      amount_fined,
-                      latitude,
-                      longitude,
-                      unique_id
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          insertData.push(values);
+        })
+        .on("end", (rowCount: number) => {
+          console.debug(`Parsed ${rowCount} rows from CSV.`);
+
+          // Begin transaction
+          newdb.exec("BEGIN TRANSACTION", (err) => {
+            if (err) {
+              console.error("Error starting transaction: ", err.message);
+              return;
+            }
+
+            const query = `
+                INSERT INTO dinesafe (
+                    id,
+                    establishment_id,
+                    inspection_id,
+                    establishment_name,
+                    establishment_type,
+                    establishment_address,
+                    establishment_status,
+                    min_inspections_per_year,
+                    infraction_details,
+                    inspection_date,
+                    severity,
+                    action,
+                    outcome,
+                    amount_fined,
+                    latitude,
+                    longitude,
+                    unique_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
               `;
 
-      const values = [
-        parseInt(row["_id"], 10),
-        parseInt(row["Establishment ID"], 10),
-        parseInt(row["Inspection ID"], 10),
-        row["Establishment Name"],
-        row["Establishment Type"],
-        row["Establishment Address"],
-        row["Establishment Status"],
-        row["Min. Inspections Per Year"],
-        row["Infraction Details"],
-        row["Inspection Date"],
-        row["Severity"],
-        row["Action"],
-        row["Outcome"],
-        row["Amount Fined"],
-        row["Latitude"],
-        row["Longitude"],
-        row["unique_id"],
-      ];
+            const stmt = newdb.prepare(query);
 
-      newdb.run(query, values, (err) => {
-        if (err) {
-          console.error("Error inserting data: ", err.message);
-        }
-      });
-    })
-    .on("end", (rowCount: number) => {
-      console.debug(`Loaded ${rowCount} entries into db.`);
-    });
+            // Insert all data within the transaction
+            for (const values of insertData) {
+              stmt.run(values, (err) => {
+                if (err) {
+                  console.error("Error inserting data: ", err.message);
+                }
+              });
+            }
 
-  const fsData = readFileSync("./data/Dinesafe.csv", "utf8");
-  fp.write(fsData);
+            stmt.finalize((err) => {
+              if (err) {
+                console.error("Error finalizing statement: ", err.message);
+                return;
+              }
+
+              // Commit transaction
+              newdb.exec("COMMIT", (err) => {
+                if (err) {
+                  console.error("Error committing transaction: ", err.message);
+                } else {
+                  console.log("Transaction committed successfully.");
+                }
+              });
+            });
+          });
+        });
+
+      const fsData = readFileSync("./data/Dinesafe.csv", "utf8");
+      fp.write(fsData);
+      fp.end();
+    }
+  );
 }
 
 function createDatabase() {
@@ -122,31 +164,35 @@ function initWebServer(db: Database) {
 
       console.log("Lookin' for %s", req.query.q);
 
-      db.all(`SELECT * FROM dinesafe WHERE establishment_address LIKE "%" || ? || "%" OR establishment_name LIKE "%" || ? || "%" LIMIT 20;`, [searchQuery, searchQuery], (err, rows) => {
-        if (err) {
-          console.error(err);
-          throw new Error("OOF! *Roblox crash noise*");
+      db.all(
+        `SELECT * FROM dinesafe WHERE establishment_address LIKE "%" || ? || "%" OR establishment_name LIKE "%" || ? || "%" LIMIT 20;`,
+        [searchQuery, searchQuery],
+        (err, rows) => {
+          if (err) {
+            console.error(err);
+            throw new Error("OOF! *Roblox crash noise*");
+          }
+          if (rows.length == 0) {
+            res.status(204).send("No results found :(");
+          } else {
+            let respData = rows.map((item: any, index) => {
+              return {
+                name: `${item.establishment_name}`,
+                address: `${item.establishment_address}`,
+                type: `${item.establishment_type}`,
+                status: `${item.establishment_status}`,
+                severity: `${item.severity}`,
+                details: `${item.infraction_details}`,
+                date: `${item.inspection_date}`,
+                action: `${item.action}`,
+                outcome: `${item.outcome}`,
+                fined: `${item.amount_fined}`,
+              };
+            });
+            res.status(200).json(respData);
+          }
         }
-        if (rows.length == 0) {
-          res.status(204).send("No results found :(");
-        } else {
-          let respData = rows.map((item: any, index) => {
-            return {
-              name: `${item.establishment_name}`,
-              address: `${item.establishment_address}`,
-              type: `${item.establishment_type}`,
-              status: `${item.establishment_status}`,
-              severity: `${item.severity}`,
-              details: `${item.infraction_details}`,
-              date: `${item.inspection_date}`,
-              action: `${item.action}`,
-              outcome: `${item.outcome}`,
-              fined: `${item.amount_fined}`,
-            };
-          });
-          res.status(200).json(respData);
-        }
-      });
+      );
     } catch {
       res
         .status(500)
