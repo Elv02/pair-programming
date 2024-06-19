@@ -1,4 +1,5 @@
 import "./SearchResults.scss";
+import axios from "axios";
 
 const results = [
 	{
