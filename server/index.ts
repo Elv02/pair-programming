@@ -131,21 +131,21 @@ function createTables(newdb: Database) {
 }
 
 function createDatabase() {
-  const newdb = new Database("./data/Dinesafe.db", (err) => {
-    if (err) {
-      console.error("Getting error: %s", err);
-      exit(1);
-    }
-    newdb.all(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='dinesafe';`,
-      (err, rows) => {
-        if (rows.length == 0) {
-          createTables(newdb);
-        }
-      }
-    );
-  });
-  return newdb;
+	const newdb = new Database("./data/Dinesafe.db", (err) => {
+		if (err) {
+			console.error("Getting error: %s", err);
+			exit(1);
+		}
+		newdb.all(
+			`SELECT name FROM sqlite_master WHERE type='table' AND name='dinesafe';`,
+			(err, rows) => {
+				if (rows.length == 0) {
+					createTables(newdb);
+				}
+			}
+		);
+	});
+	return newdb;
 }
 
 function initWebServer(db: Database) {
@@ -155,15 +155,15 @@ function initWebServer(db: Database) {
   const app = express();
   app.use(cors());
 
-  app.get("/", (req, res) => {
-    res.send("This is Dr. Frasier Crane... I'm listening.");
-  });
+	app.get("/", (req, res) => {
+		res.send("This is Dr. Frasier Crane... I'm listening.");
+	});
 
-  app.get("/search", (req, res) => {
-    try {
-      const searchQuery = req.query.q;
+	app.get("/search", (req, res) => {
+		try {
+			const searchQuery = req.query.q;
 
-      console.log("Lookin' for %s", req.query.q);
+			console.log("Lookin' for %s", req.query.q);
 
       db.all(
         `SELECT * FROM dinesafe WHERE establishment_address LIKE "%" || ? || "%" OR establishment_name LIKE "%" || ? || "%" LIMIT 20;`,
@@ -206,12 +206,12 @@ function initWebServer(db: Database) {
 }
 
 function main() {
-  console.debug("Loading server instance ");
-  const db = createDatabase();
-  const app = initWebServer(db);
-  app.listen(8080, () => {
-    console.log("Server listening on Port", 8080);
-  });
+	console.debug("Loading server instance ");
+	const db = createDatabase();
+	const app = initWebServer(db);
+	app.listen(8080, () => {
+		console.log("Server listening on Port", 8080);
+	});
 }
 
 main();

@@ -50,6 +50,7 @@ form {
 	font-family: "AskWhy";
 	letter-spacing: 0.15rem;
 	border: 3px solid black;
+	cursor: pointer;
 }
 
 .promotion-blocks {
@@ -67,6 +68,8 @@ form {
 	width: 30%;
 	border-radius: 10px;
 	height: 10rem;
+	background-color: #543b83;
+	color: white;
 
 	h4 {
 		text-align: center;
