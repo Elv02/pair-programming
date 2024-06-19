@@ -153,6 +153,7 @@ function initWebServer(db: Database) {
    * Create express endpoints
    */
   const app = express();
+  app.use(cors());
 
   app.get("/", (req, res) => {
     res.send("This is Dr. Frasier Crane... I'm listening.");
