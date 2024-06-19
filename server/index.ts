@@ -2,7 +2,7 @@ import { Database, OPEN_CREATE } from "sqlite3";
 import { parse } from "@fast-csv/parse";
 import { readFileSync } from "fs";
 import { exit } from "process";
-import { express } from "express";
+import express from "express";
 
 function createTables(newdb: Database) {
   newdb.exec(`
@@ -94,7 +94,14 @@ function createDatabase() {
       console.error("Getting error: %s", err);
       exit(1);
     }
-    createTables(newdb);
+    newdb.all(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='dinesafe';`,
+      (err, rows) => {
+        if (rows.length == 0) {
+          createTables(newdb);
+        }
+      }
+    );
   });
   return newdb;
 }
@@ -111,18 +118,19 @@ function initWebServer(db: Database) {
 
   app.get("/search", (req, res) => {
     try {
-      const searchQuery = res.query.q;
-      const dbQuery =
-        "SELECT * FROM dinesafe WHERE establishment_address OR establishment_name LIKE '%?%';";
+      const searchQuery = req.query.q;
 
-      db.all(dbQuery, searchQuery, (err, rows) => {
+      console.log("Lookin' for %s", req.query.q);
+
+      db.all(`SELECT * FROM dinesafe WHERE establishment_address LIKE "%" || ? || "%" OR establishment_name LIKE "%" || ? || "%" LIMIT 20;`, [searchQuery, searchQuery], (err, rows) => {
         if (err) {
+          console.error(err);
           throw new Error("OOF! *Roblox crash noise*");
         }
         if (rows.length == 0) {
           res.status(204).send("No results found :(");
         } else {
-          let respData = rows.map((item, index) => {
+          let respData = rows.map((item: any, index) => {
             return {
               name: `${item.establishment_name}`,
               address: `${item.establishment_address}`,
@@ -136,7 +144,7 @@ function initWebServer(db: Database) {
               fined: `${item.amount_fined}`,
             };
           });
-          res.status(200).json(rows); // TODO: Trim this!
+          res.status(200).json(respData);
         }
       });
     } catch {
@@ -154,6 +162,9 @@ function main() {
   console.debug("Loading server instance ");
   const db = createDatabase();
   const app = initWebServer(db);
+  app.listen(8080, () => {
+    console.log("Server listening on Port", 8080);
+  });
 }
 
 main();
